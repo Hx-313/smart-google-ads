@@ -17,6 +17,7 @@ import 'handlers/rewarded_handler.dart';
 import 'widgets/banner_ad_controller.dart';
 
 typedef ProChecker = bool Function();
+typedef AdsConsentChecker = Future<bool> Function();
 
 class AdsService with WidgetsBindingObserver {
   // ══════════════ SINGLETON ══════════════
@@ -52,6 +53,9 @@ class AdsService with WidgetsBindingObserver {
   AdsConfig _config = _disabledConfig;
   AdsRetryManager _retryManager = AdsRetryManager(_disabledConfig);
   AdsKeyProvider? _keyProvider;
+  AdsConsentChecker? _consentChecker;
+  bool _consentAllowed = true;
+  bool _lifecycleObserverRegistered = false;
 
   AdsConfig get config => _config;
 
@@ -60,7 +64,13 @@ class AdsService with WidgetsBindingObserver {
   /// Pro check function — no BuildContext
   ProChecker _isProUser = () => false;
 
-  bool get _isSafeToOperate => _initialized && _config.adsEnabled;
+  /// True only when ads are enabled and the configured consent gate allows
+  /// ad requests. With no consent checker, this remains true for backwards
+  /// compatibility with the original package behavior.
+  bool get _isSafeToOperate =>
+      _initialized && _config.adsEnabled && _consentAllowed;
+
+  bool get canRequestAds => _consentAllowed;
 
   // ── Handlers ──
   InterstitialHandler? _interstitialHandler;
@@ -114,6 +124,7 @@ class AdsService with WidgetsBindingObserver {
   static Future<AdsService> initialize({
     required AdsKeyProvider keyProvider,
     ProChecker? isProUser,
+    AdsConsentChecker? consentChecker,
   }) async {
     // ✅ If already initialized, return.
     if (_instance != null && _instance!._initialized) return _instance!;
@@ -124,13 +135,15 @@ class AdsService with WidgetsBindingObserver {
 
     if (isProUser != null) service._isProUser = isProUser;
     service._keyProvider = keyProvider;
+    service._consentChecker = consentChecker;
 
     // Init MobileAds (safe to call multiple times)
     await MobileAds.instance.initialize();
 
     // Fetch config
     final fetchedConfig = await keyProvider.getConfig();
-    service._config = fetchedConfig;
+    service._consentAllowed = await service._readConsent();
+    service._config = service._configWithConsent(fetchedConfig);
     service._retryManager = AdsRetryManager(service._config);
 
     // Configure connectivity
@@ -141,9 +154,9 @@ class AdsService with WidgetsBindingObserver {
     // Mark initialized even if ads are disabled — so app won't try re-init loops
     service._initialized = true;
 
-    if (!service._config.adsEnabled) {
+    if (!service._config.adsEnabled || !service._consentAllowed) {
       dPrint(
-        '🚫 AdsService: adsEnabled=false (service initialized in no-ads mode)',
+        '🚫 AdsService: ads are currently unavailable (initialized in no-ads mode)',
       );
       return service;
     }
@@ -152,7 +165,7 @@ class AdsService with WidgetsBindingObserver {
     service._createHandlers();
 
     // Observer only matters if appOpen is enabled
-    WidgetsBinding.instance.addObserver(service);
+    service._addLifecycleObserver();
 
     // Preload
     if (service._config.preloadEnabled && !service._isProUser()) {
@@ -200,6 +213,10 @@ class AdsService with WidgetsBindingObserver {
       );
 
       _appOpenHandler!.onDismissed = () {
+        _bannerController.onDialogClosed();
+        _loadWithRetry(AdType.appOpen);
+      };
+      _appOpenHandler!.onError = (_) {
         _bannerController.onDialogClosed();
         _loadWithRetry(AdType.appOpen);
       };
@@ -384,15 +401,42 @@ class AdsService with WidgetsBindingObserver {
       return;
     }
 
-    final originalOnDismissed = _directInterstitialHandler!.onDismissed;
-    _directInterstitialHandler!.onDismissed = () {
+    final handler = _directInterstitialHandler!;
+    final originalOnDismissed = handler.onDismissed;
+    final originalOnError = handler.onError;
+    var navigationResumed = false;
+
+    void resumeNavigation() {
+      if (navigationResumed) return;
+      navigationResumed = true;
+      onResumeNavigation?.call();
+    }
+
+    void restoreCallbacks() {
+      handler.onDismissed = originalOnDismissed;
+      handler.onError = originalOnError;
+    }
+
+    handler.onDismissed = () {
       _interstitialJustDismissed = true;
       onDismissed?.call();
-      onResumeNavigation?.call();
-      _directInterstitialHandler!.onDismissed = originalOnDismissed;
+      resumeNavigation();
+      restoreCallbacks();
     };
 
-    _directInterstitialHandler!.show();
+    handler.onError = (error) {
+      _interstitialJustDismissed = true;
+      resumeNavigation();
+      restoreCallbacks();
+      originalOnError?.call(error);
+    };
+
+    handler.show().then((shown) {
+      if (!shown) {
+        resumeNavigation();
+        restoreCallbacks();
+      }
+    });
   }
 
   void _onInterstitialDismissed() {
@@ -478,6 +522,15 @@ class AdsService with WidgetsBindingObserver {
   Future<bool> showAppOpen() async {
     if (!_isSafeToOperate) return false;
     if (!hasAppOpen || _isProUser()) return false;
+    if (isAppOpenBlocked) {
+      if (_skipNextAppOpen) {
+        _skipNextAppOpen = false;
+        dPrint('⏭️ AppOpen: skipped one opportunity');
+      } else {
+        dPrint('🛡️ AppOpen: blocked while a protected flow is active');
+      }
+      return false;
+    }
     if (_appOpenHandler == null) return false;
 
     if (!_appOpenHandler!.isLoaded) {
@@ -501,12 +554,35 @@ class AdsService with WidgetsBindingObserver {
     if (provider == null) return;
 
     final newConfig = await provider.getConfig();
+    _consentAllowed = await _readConsent();
     _disposeHandlers();
-    _config = newConfig;
+    _config = _configWithConsent(newConfig);
     _retryManager = AdsRetryManager(_config);
     _interstitialLoadInProgress = false;
-    _createHandlers();
-    if (_config.preloadEnabled) _preloadAll();
+    if (_config.adsEnabled) {
+      _createHandlers();
+      _addLifecycleObserver();
+      if (_config.preloadEnabled) _preloadAll();
+    }
+  }
+
+  /// Re-reads the UMP decision after the user changes privacy settings.
+  ///
+  /// When consent is revoked, existing handlers are disposed immediately so
+  /// future loads and shows cannot continue using the old decision. When it is
+  /// granted again, the current Remote Config/ID configuration is rebuilt.
+  Future<void> refreshConsent() async {
+    if (_consentChecker == null) return;
+
+    _consentAllowed = await _readConsent();
+    if (!_consentAllowed) {
+      _disposeHandlers();
+      _config = _config.copyWith(adsEnabled: false, preloadEnabled: false);
+      _retryManager = AdsRetryManager(_config);
+      return;
+    }
+
+    await refreshConfig();
   }
 
   void _disposeHandlers() {
@@ -526,8 +602,12 @@ class AdsService with WidgetsBindingObserver {
   }
 
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    if (_lifecycleObserverRegistered) {
+      WidgetsBinding.instance.removeObserver(this);
+      _lifecycleObserverRegistered = false;
+    }
     _disposeHandlers();
+    clearAppOpenBlockers();
     _screenCount = 0;
     _pendingNavCallback = null;
     _interstitialLoadInProgress = false;
@@ -541,6 +621,7 @@ class AdsService with WidgetsBindingObserver {
 
   Map<String, dynamic> getDebugState() => {
     'initialized': _initialized,
+    'consentAllowed': _consentAllowed,
     'config': _config.toString(),
     'isPro': _isProUser(),
     'connectivity': AdsConnectivity.isOnline,
@@ -662,5 +743,30 @@ class AdsService with WidgetsBindingObserver {
     dPrint('📊 AdsService Debug');
     getDebugState().forEach((k, v) => dPrint('   $k: $v'));
     dPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  }
+
+  Future<bool> _readConsent() async {
+    final checker = _consentChecker;
+    if (checker == null) return true;
+
+    try {
+      final allowed = await checker();
+      if (!allowed) dPrint('🛡️ AdsService: consent gate is blocking ad requests');
+      return allowed;
+    } catch (error) {
+      dPrint('⚠️ AdsService: consent check failed; blocking ads: $error');
+      return false;
+    }
+  }
+
+  AdsConfig _configWithConsent(AdsConfig config) {
+    if (_consentAllowed) return config;
+    return config.copyWith(adsEnabled: false, preloadEnabled: false);
+  }
+
+  void _addLifecycleObserver() {
+    if (_lifecycleObserverRegistered) return;
+    WidgetsBinding.instance.addObserver(this);
+    _lifecycleObserverRegistered = true;
   }
 }

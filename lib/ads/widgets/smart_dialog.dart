@@ -1,12 +1,35 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/material.dart' as material;
+import 'package:flutter/material.dart';
 
+import '../ads_service.dart';
 import 'banner_ad_controller.dart';
 
-/// Helper class for showing dialogs with automatic banner ad hiding
+/// Ad-aware wrappers for dialogs and modal surfaces.
+///
+/// Use these methods instead of Flutter's dialog helpers whenever a banner
+/// may be visible. They hide banners for the entire modal lifetime and block
+/// app-open ads while the modal is active. Every wrapper restores ad state in
+/// a `finally` block, including when the modal is dismissed with an error.
 class SmartDialog {
   static final _controller = BannerAdController();
+  static int _nextBlockerId = 0;
+
+  static String _openOverlay() {
+    _controller.onDialogOpened();
+    final reason = 'smart_dialog_${_nextBlockerId++}';
+    if (AdsService.isInitialized) {
+      AdsService.instance.blockAppOpen(reason);
+    }
+    return reason;
+  }
+
+  static void _closeOverlay(String reason) {
+    _controller.onDialogClosed();
+    if (AdsService.isInitialized) {
+      AdsService.instance.unblockAppOpen(reason);
+    }
+  }
 
   /// Show a dialog and automatically hide/show banner ads
   static Future<T?> show<T>({
@@ -18,7 +41,7 @@ class SmartDialog {
     bool useSafeArea = true,
     RouteSettings? routeSettings,
   }) async {
-    _controller.onDialogOpened();
+    final blocker = _openOverlay();
 
     try {
       final result = await showDialog<T>(
@@ -32,7 +55,7 @@ class SmartDialog {
       );
       return result;
     } finally {
-      _controller.onDialogClosed();
+      _closeOverlay(blocker);
     }
   }
 
@@ -55,17 +78,18 @@ class SmartDialog {
     required Widget dialog,
     bool barrierDismissible = false,
   }) async {
-    _controller.onDialogOpened();
+    final blocker = _openOverlay();
 
     try {
       final result = await showCupertinoDialog<T>(
         context: context,
-        dialog: dialog,
+
         barrierDismissible: barrierDismissible,
+        dialog: dialog,
       );
       return result;
     } finally {
-      _controller.onDialogClosed();
+      _closeOverlay(blocker);
     }
   }
 
@@ -83,7 +107,7 @@ class SmartDialog {
     bool isDismissible = true,
     bool? useRootNavigator,
   }) async {
-    _controller.onDialogOpened();
+    final blocker = _openOverlay();
 
     try {
       final result = await showModalBottomSheet<T>(
@@ -101,7 +125,7 @@ class SmartDialog {
       );
       return result;
     } finally {
-      _controller.onDialogClosed();
+      _closeOverlay(blocker);
     }
   }
 
@@ -110,7 +134,7 @@ class SmartDialog {
     required BuildContext context,
     required Widget actionSheet,
   }) async {
-    _controller.onDialogOpened();
+    final blocker = _openOverlay();
 
     try {
       final result = await showCupertinoModalPopup<T>(
@@ -119,7 +143,7 @@ class SmartDialog {
       );
       return result;
     } finally {
-      _controller.onDialogClosed();
+      _closeOverlay(blocker);
     }
   }
 
@@ -135,7 +159,7 @@ class SmartDialog {
     String? cancelText,
     String? confirmText,
   }) async {
-    _controller.onDialogOpened();
+    final blocker = _openOverlay();
 
     try {
       final result = await material.showDatePicker(
@@ -151,7 +175,7 @@ class SmartDialog {
       );
       return result;
     } finally {
-      _controller.onDialogClosed();
+      _closeOverlay(blocker);
     }
   }
 
@@ -163,7 +187,7 @@ class SmartDialog {
     String? cancelText,
     String? confirmText,
   }) async {
-    _controller.onDialogOpened();
+    final blocker = _openOverlay();
 
     try {
       final result = await material.showTimePicker(
@@ -175,7 +199,7 @@ class SmartDialog {
       );
       return result;
     } finally {
-      _controller.onDialogClosed();
+      _closeOverlay(blocker);
     }
   }
 }

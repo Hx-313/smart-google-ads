@@ -26,10 +26,12 @@ class BannerAdShimmer extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final baseColor = isDark ? Colors.grey[850]! : Colors.grey[300]!;
     final highlightColor = isDark ? Colors.grey[700]! : Colors.grey[100]!;
-    final containerBg =
-        isDark ? const Color(0xFF1E1F22) : const Color(0xFFF7F8FA);
-    final containerBorder =
-        isDark ? const Color(0xFF2E3035) : const Color(0xFFE5E7EB);
+    final containerBg = isDark
+        ? const Color(0xFF1E1F22)
+        : const Color(0xFFF7F8FA);
+    final containerBorder = isDark
+        ? const Color(0xFF2E3035)
+        : const Color(0xFFE5E7EB);
 
     final effectiveHeight = height ?? 56.0;
     final effectiveBorderRadius = borderRadius ?? BorderRadius.circular(6.0);
@@ -46,10 +48,7 @@ class BannerAdShimmer extends StatelessWidget {
       decoration: BoxDecoration(
         color: containerBg,
         borderRadius: effectiveBorderRadius,
-        border: Border.all(
-          color: containerBorder,
-          width: 0.8,
-        ),
+        border: Border.all(color: containerBorder, width: 0.8),
       ),
       child: ClipRRect(
         borderRadius: effectiveBorderRadius,
@@ -57,7 +56,10 @@ class BannerAdShimmer extends StatelessWidget {
           baseColor: baseColor,
           highlightColor: highlightColor,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 4.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 10.0,
+              vertical: 4.0,
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [

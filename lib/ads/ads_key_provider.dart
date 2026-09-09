@@ -38,10 +38,18 @@ class RemoteConfigAdsKeyProvider implements AdsKeyProvider {
   /// Optional extra keys to fetch (e.g., your aiApiKey)
   final void Function(FirebaseRemoteConfig rc)? onConfigFetched;
 
+  /// Remote Config fetch timeout.
+  final Duration fetchTimeout;
+
+  /// Firebase's minimum interval between network fetches.
+  final Duration minimumFetchInterval;
+
   RemoteConfigAdsKeyProvider({
     required this.fallback,
     this.customKeys,
     this.onConfigFetched,
+    this.fetchTimeout = const Duration(seconds: 10),
+    this.minimumFetchInterval = const Duration(hours: 6),
   });
 
   @override
@@ -51,8 +59,8 @@ class RemoteConfigAdsKeyProvider implements AdsKeyProvider {
 
       await rc.setConfigSettings(
         RemoteConfigSettings(
-          fetchTimeout: const Duration(seconds: 10),
-          minimumFetchInterval: const Duration(hours: 6),
+          fetchTimeout: fetchTimeout,
+          minimumFetchInterval: minimumFetchInterval,
         ),
       );
 
@@ -63,6 +71,8 @@ class RemoteConfigAdsKeyProvider implements AdsKeyProvider {
         _key(AdRemoteKeys.native): fallback.nativeEnabled,
         _key(AdRemoteKeys.appOpen): fallback.appOpenEnabled,
         _key(AdRemoteKeys.rewarded): fallback.rewardedEnabled,
+        _key(AdRemoteKeys.directInterstitial):
+            fallback.directInterstitialEnabled,
         _key(AdRemoteKeys.adsEnabled): fallback.adsEnabled,
         _key(AdRemoteKeys.adsCount): fallback.interstitialAfter,
       });
@@ -78,9 +88,16 @@ class RemoteConfigAdsKeyProvider implements AdsKeyProvider {
         nativeEnabled: rc.getBool(_key(AdRemoteKeys.native)),
         appOpenEnabled: rc.getBool(_key(AdRemoteKeys.appOpen)),
         rewardedEnabled: rc.getBool(_key(AdRemoteKeys.rewarded)),
+        directInterstitialEnabled: rc.getBool(
+          _key(AdRemoteKeys.directInterstitial),
+        ),
 
-        // 🟢 FIXED: If 'ads_enabled' is missing in Remote Config, default to TRUE
-        adsEnabled: _getRemoteBool(rc, _key(AdRemoteKeys.adsEnabled), true),
+        // If 'ads_enabled' is missing, preserve the local fallback.
+        adsEnabled: _getRemoteBool(
+          rc,
+          _key(AdRemoteKeys.adsEnabled),
+          fallback.adsEnabled,
+        ),
 
         interstitialAfter: rc.getInt(_key(AdRemoteKeys.adsCount)),
       );

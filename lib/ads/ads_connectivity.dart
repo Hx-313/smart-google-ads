@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'd_print.dart';
 
-
 /// Connectivity checker with periodic recheck.
 ///
 /// YOUR OLD PROBLEM: One-way latch permanently blocked ads if user

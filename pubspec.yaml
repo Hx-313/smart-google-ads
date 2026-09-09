@@ -1,11 +1,10 @@
-name: interactive_ads
-description: "A new Flutter package project."
-version: 0.0.1
-homepage:
+name: smart_google_ads
+description: "A lifecycle-safe Flutter Google Mobile Ads package with optional UMP consent, age restrictions, Remote Config, and smart ad widgets."
+version: 0.1.0
 
 environment:
   sdk: ^3.12.2
-  flutter: ">=1.17.0"
+  flutter: ">=3.44.0"
 
 dependencies:
   firebase_remote_config: ^6.6.0

@@ -70,31 +70,37 @@ class AdsConfig {
       adsEnabled &&
       directInterstitialEnabled &&
       directInterstitialIds != null &&
-      !directInterstitialIds!.isEmpty;
+      directInterstitialIds!.isAvailable;
   bool get isBannerAvailable =>
-      adsEnabled && bannerEnabled && bannerIds != null && !bannerIds!.isEmpty;
+      adsEnabled &&
+      bannerEnabled &&
+      bannerIds != null &&
+      bannerIds!.isAvailable;
 
   bool get isInterstitialAvailable =>
       adsEnabled &&
       interstitialEnabled &&
       interstitialIds != null &&
-      !interstitialIds!.isEmpty &&
+      interstitialIds!.isAvailable &&
       interstitialAfter > 0;
 
   bool get isNativeAvailable =>
-      adsEnabled && nativeEnabled && nativeIds != null && !nativeIds!.isEmpty;
+      adsEnabled &&
+      nativeEnabled &&
+      nativeIds != null &&
+      nativeIds!.isAvailable;
 
   bool get isAppOpenAvailable =>
       adsEnabled &&
       appOpenEnabled &&
       appOpenIds != null &&
-      !appOpenIds!.isEmpty;
+      appOpenIds!.isAvailable;
 
   bool get isRewardedAvailable =>
       adsEnabled &&
       rewardedEnabled &&
       rewardedIds != null &&
-      !rewardedIds!.isEmpty;
+      rewardedIds!.isAvailable;
 
   bool hasAdType(AdType type) => availableAdTypes.contains(type);
 
@@ -121,10 +127,12 @@ class AdsConfig {
     bool? appOpenEnabled,
     bool? rewardedEnabled,
     bool? adsEnabled,
+    bool? directInterstitialEnabled,
     int? interstitialAfter,
     int? maxRetryAttempts,
     Duration? retryBaseDelay,
     bool? preloadEnabled,
+    Duration? connectivityRecheckInterval,
   }) {
     return AdsConfig(
       bannerIds: bannerIds ?? this.bannerIds,
@@ -138,10 +146,14 @@ class AdsConfig {
       appOpenEnabled: appOpenEnabled ?? this.appOpenEnabled,
       rewardedEnabled: rewardedEnabled ?? this.rewardedEnabled,
       adsEnabled: adsEnabled ?? this.adsEnabled,
+      directInterstitialEnabled:
+          directInterstitialEnabled ?? this.directInterstitialEnabled,
       interstitialAfter: interstitialAfter ?? this.interstitialAfter,
       maxRetryAttempts: maxRetryAttempts ?? this.maxRetryAttempts,
       retryBaseDelay: retryBaseDelay ?? this.retryBaseDelay,
       preloadEnabled: preloadEnabled ?? this.preloadEnabled,
+      connectivityRecheckInterval:
+          connectivityRecheckInterval ?? this.connectivityRecheckInterval,
       directInterstitialIds:
           directInterstitialIds ?? this.directInterstitialIds,
     );
