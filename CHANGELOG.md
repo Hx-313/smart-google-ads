@@ -1,3 +1,10 @@
+## 0.1.1
+
+* Added a complete local-mode example app for pub.dev users.
+* Expanded setup documentation for local ad flags and interstitial frequency.
+* Added missing documentation for `AdClickProvider`.
+* Added platform-specific debug ad-unit ID support.
+
 ## 0.1.0
 
 * Added the package-owned `AdsBootstrap` API.
