@@ -13,6 +13,7 @@ dependencies:
   flutter:
     sdk: flutter
   google_mobile_ads: ^9.1.0
+  shimmer: ^4.0.0
 
 dev_dependencies:
   flutter_test:

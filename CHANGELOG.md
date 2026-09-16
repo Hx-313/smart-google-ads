@@ -7,7 +7,7 @@
 * Made omitted consent environment-aware: debug skips UMP for test ads and
   release enforces UMP; explicit consent values still override the default.
 * Consolidated Remote Config setup under `AdsRemoteConfigOptions`.
-* Replaced the shimmer runtime dependency with a static Flutter placeholder.
+* Restored the animated shimmer loading placeholder for banner ads.
 
 ## 0.1.1
 
