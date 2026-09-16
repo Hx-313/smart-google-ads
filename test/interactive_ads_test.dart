@@ -325,10 +325,12 @@ void main() {
     'banner placeholder includes the animated shimmer',
     (tester) async {
       await tester.pumpWidget(
-      const MaterialApp(home: BannerAdShimmer()),
-    );
+        const MaterialApp(home: BannerAdShimmer()),
+      );
 
       expect(find.byType(Shimmer), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
     },
   );
 }
