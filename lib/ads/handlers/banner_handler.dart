@@ -24,8 +24,7 @@ class BannerHandler extends BaseAdHandler {
   }) async {
     if (state == AdState.loading) return false;
 
-    // ignore: deprecated_member_use
-    final size = await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(
+    final size = await AdSize.getLargeAnchoredAdaptiveBannerAdSize(
       screenWidth.truncate(),
     );
     if (size == null) return false;

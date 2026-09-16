@@ -17,6 +17,7 @@ class RewardedHandler extends BaseAdHandler {
   // ── Preload state exposed so the sheet can read isRewardedLoading ──
   bool _isPreloading = false;
   bool get isPreloading => _isPreloading;
+  Future<bool>? _loadFuture;
 
   VoidCallback? onDismissed;
   void Function(String error)? onError;
@@ -25,10 +26,14 @@ class RewardedHandler extends BaseAdHandler {
 
   @override
   Future<bool> load() {
-    if (state == AdState.loading) return Future.value(false);
+    if (state == AdState.loaded && _ad != null) return Future.value(true);
+    final pending = _loadFuture;
+    if (pending != null) return pending;
+
     state = AdState.loading;
     _isPreloading = true;
     final completer = Completer<bool>();
+    _loadFuture = completer.future;
 
     RewardedAd.load(
       adUnitId: adUnitId,
@@ -49,7 +54,11 @@ class RewardedHandler extends BaseAdHandler {
       ),
     );
 
-    return completer.future;
+    final future = completer.future;
+    future.whenComplete(() {
+      if (identical(_loadFuture, future)) _loadFuture = null;
+    });
+    return future;
   }
 
   /// Shows ad and returns true if reward was earned.
@@ -84,13 +93,21 @@ class RewardedHandler extends BaseAdHandler {
       },
     );
 
-    adToShow.show(
-      onUserEarnedReward: (ad, reward) async {
-        dPrint('🎉 Reward earned: ${reward.type} × ${reward.amount}');
-        _rewardEarned = true;
-        await onUserEarnedReward?.call();
-      },
-    );
+    try {
+      adToShow.show(
+        onUserEarnedReward: (ad, reward) async {
+          dPrint('🎉 Reward earned: ${reward.type} × ${reward.amount}');
+          _rewardEarned = true;
+          await onUserEarnedReward?.call();
+        },
+      );
+    } catch (error) {
+      _restoreUI();
+      state = AdState.failed;
+      adToShow.dispose();
+      onError?.call(error.toString());
+      if (!completer.isCompleted) completer.complete(false);
+    }
 
     return completer.future;
   }
@@ -106,6 +123,7 @@ class RewardedHandler extends BaseAdHandler {
     _ad = null;
     state = AdState.idle;
     _isPreloading = false;
+    _loadFuture = null;
     _rewardEarned = false;
   }
 }

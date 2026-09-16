@@ -18,7 +18,6 @@ Future<void> main() async {
 
   await AdsBootstrap.init(
     adUnitIds: exampleAdUnitIds,
-    useRemoteConfig: false,
     adsEnabled: true,
     bannerEnabled: true,
     interstitialEnabled: true,
@@ -27,8 +26,8 @@ Future<void> main() async {
     nativeEnabled: false,
     appOpenEnabled: false,
     directInterstitialEnabled: false,
-    // Remove this line only if the host app owns an equivalent consent flow.
-    consent: const AdsConsentOptions(),
+    // Omitted consent disables UMP in debug for test ads and enables UMP in
+    // release builds. Pass AdsConsentOptions explicitly to override it.
   );
 
   runApp(const SmartGoogleAdsExampleApp());

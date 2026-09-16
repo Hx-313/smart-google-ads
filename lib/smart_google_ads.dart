@@ -1,4 +1,5 @@
 export 'ads/ads_bootstrap.dart';
+export 'ads/app_open_lifecycle.dart';
 export 'ads/ads_config.dart';
 export 'ads/ads_key_provider.dart';
 export 'ads/ads_privacy.dart';

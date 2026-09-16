@@ -1,4 +1,5 @@
 import 'package:firebase_remote_config/firebase_remote_config.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'ads_config.dart';
@@ -123,11 +124,11 @@ class AdsRemoteConfigOptions {
 
 /// Package-owned entry point for initializing the complete ads stack.
 ///
-/// The host app only needs to provide [adUnitIds], whether Remote Config is
-/// enabled, and an optional premium-user callback. Mobile Ads initialization,
-/// config fallback, handler creation, preload, and lifecycle observation are
-/// handled by the package. Consent and request restrictions are opt-in through
-/// [AdsConsentOptions] and [AdsPolicyOptions], respectively.
+/// The host app only needs to provide [adUnitIds], optional
+/// [AdsRemoteConfigOptions], and an optional premium-user callback. Mobile Ads
+/// initialization, config fallback, handler creation, preload, and lifecycle
+/// handling are managed by the package. When [consent] is omitted, debug
+/// builds disable the UMP gate for test ads and release builds enforce UMP.
 class AdsBootstrap {
   AdsBootstrap._();
 
@@ -137,8 +138,24 @@ class AdsBootstrap {
   static AdsConsentManager? _consentManager;
 
   /// The UMP manager used during bootstrap, if consent integration was
-  /// explicitly enabled. Null means the package is running in legacy mode.
+  /// explicitly enabled. In debug builds, omitted consent leaves this null;
+  /// release builds create it automatically.
   static AdsConsentManager? get consentManager => _consentManager;
+
+  /// Resolves the environment-aware default used when [consent] is omitted.
+  ///
+  /// This is public only to make the policy easy to regression-test; apps
+  /// should normally let [init] select the value from [kDebugMode].
+  @visibleForTesting
+  static AdsConsentOptions resolveConsentOptions({
+    AdsConsentOptions? consent,
+    bool debug = kDebugMode,
+  }) {
+    return consent ??
+        (debug
+            ? const AdsConsentOptions.disabled()
+            : const AdsConsentOptions());
+  }
 
   /// Whether Google requires a visible privacy-options entry point.
   static Future<bool> isPrivacyOptionsRequired() async {
@@ -168,12 +185,9 @@ class AdsBootstrap {
   /// host app, because advertising should never prevent the app from opening.
   static Future<AdsService> init({
     required AdsAdUnitIds adUnitIds,
-    bool useRemoteConfig = false,
     AdsRemoteConfigOptions? remoteConfig,
     int interstitialAfter = 3,
     bool Function()? isProUser,
-    void Function(FirebaseRemoteConfig remoteConfig)? onRemoteConfigFetched,
-    Map<String, String>? customRCKeys,
     AdsConsentOptions? consent,
     AdsPolicyOptions? policy,
     bool? bannerEnabled,
@@ -193,20 +207,16 @@ class AdsBootstrap {
       return AdsService.instance;
     }
 
-    final options =
-        remoteConfig ??
-        AdsRemoteConfigOptions(
-          enabled: useRemoteConfig,
-          keys: customRCKeys ?? const {},
-          onFetched: onRemoteConfigFetched,
-        );
+    final options = remoteConfig ?? const AdsRemoteConfigOptions.disabled();
 
     _consentManager = null;
     AdsConsentManager? consentManager;
-    if (consent != null) {
+    final consentOptions = resolveConsentOptions(consent: consent);
+    final useConsent = consent != null || !kDebugMode;
+    if (useConsent) {
       consentManager = AdsConsentManager();
       _consentManager = consentManager;
-      final canRequestAds = await consentManager.requestConsent(consent);
+      final canRequestAds = await consentManager.requestConsent(consentOptions);
       dPrint('🛡️ AdsBootstrap: consent gate allows ads = $canRequestAds');
     }
 

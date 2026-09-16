@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:shimmer/shimmer.dart';
 
-/// A theme-aware shimmer loading skeleton for banner ads.
+/// A theme-aware static loading skeleton for banner ads.
 ///
 /// Complies with Google AdMob policies and CLS prevention guidelines by
 /// reserving the banner footprint while the ad is loading.
@@ -25,7 +24,6 @@ class BannerAdShimmer extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final baseColor = isDark ? Colors.grey[850]! : Colors.grey[300]!;
-    final highlightColor = isDark ? Colors.grey[700]! : Colors.grey[100]!;
     final containerBg = isDark
         ? const Color(0xFF1E1F22)
         : const Color(0xFFF7F8FA);
@@ -52,9 +50,8 @@ class BannerAdShimmer extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: effectiveBorderRadius,
-        child: Shimmer.fromColors(
-          baseColor: baseColor,
-          highlightColor: highlightColor,
+        child: ColoredBox(
+          color: baseColor,
           child: Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: 10.0,

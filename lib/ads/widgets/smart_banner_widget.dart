@@ -65,8 +65,7 @@ class _SmartBannerAdWidgetState extends State<SmartBannerAdWidget> {
     }
 
     final width = MediaQuery.of(context).size.width.truncate();
-    // ignore: deprecated_member_use
-    final size = await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(
+    final size = await AdSize.getLargeAnchoredAdaptiveBannerAdSize(
       width,
     );
 

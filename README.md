@@ -4,8 +4,8 @@ An ad-ready Flutter package built on `google_mobile_ads`. It provides one
 bootstrap entry point for Mobile Ads, optional Firebase Remote Config flags,
 platform-aware ad unit IDs, safe preload/retry behavior, app-open suppression,
 adaptive banners, native templates, rewarded ads, and ad-aware dialogs.
-It also offers opt-in Google UMP consent handling and modern age/content
-request restrictions without changing legacy initialization behavior.
+It also offers Google UMP consent handling and modern age/content request
+restrictions with an environment-aware consent default.
 
 ## Step 1 — Install the package
 
@@ -85,6 +85,44 @@ android {
 If your project already has higher values, keep the higher values. Do not add
 another Google Mobile Ads Gradle dependency manually; `google_mobile_ads`
 provides it through the Flutter plugin.
+
+#### Android GMA Next-Gen SDK
+
+`google_mobile_ads` 9.1.0 can select Google's Android Next-Gen SDK through the
+`USE_NEXT_GEN_SDK` Dart define. Supply the define on every Android run or build
+command, including release commands. It is not an iOS setting and can be
+stored in an IDE launch configuration:
+
+```bash
+flutter run --dart-define=USE_NEXT_GEN_SDK=true
+flutter build apk --dart-define=USE_NEXT_GEN_SDK=true
+flutter build appbundle --dart-define=USE_NEXT_GEN_SDK=true
+```
+
+This package uses the Flutter plugin's native source selection. Do not add
+`play-services-ads`, `play-services-ads-lite`, or the Next-Gen SDK manually.
+
+Next-Gen does not support mediation, AdMob mediation, or other mediation
+platforms. If the host app has mediation adapters, keep using the legacy SDK
+build until those adapters are removed. For a host Gradle project that needs
+to exclude legacy artifacts while resolving a Next-Gen-compatible dependency
+graph, use the matching syntax for its build file:
+
+```kotlin
+configurations.configureEach {
+    exclude(group = "com.google.android.gms", module = "play-services-ads")
+    exclude(group = "com.google.android.gms", module = "play-services-ads-lite")
+}
+```
+
+```groovy
+configurations.configureEach {
+    exclude group: 'com.google.android.gms', module: 'play-services-ads'
+    exclude group: 'com.google.android.gms', module: 'play-services-ads-lite'
+}
+```
+
+The package does not configure mediation adapters for the host app.
 
 Open `android/app/src/main/AndroidManifest.xml`. Add the internet permission
 under `<manifest>` and the AdMob **app ID** inside `<application>`:
@@ -171,7 +209,7 @@ are used only in debug builds; release builds use the normal Android/iOS IDs.
 
 ### Step 6A — Configure Firebase Remote Config (optional)
 
-Skip this section when using `useRemoteConfig: false`.
+Skip this section when using local mode, which is the default.
 
 From the host Flutter app's directory:
 
@@ -200,7 +238,7 @@ Future<void> main() async {
 
   await AdsBootstrap.init(
     adUnitIds: adUnitIds,
-    useRemoteConfig: true,
+    remoteConfig: const AdsRemoteConfigOptions(),
     consent: const AdsConsentOptions(),
   );
 
@@ -215,13 +253,12 @@ The host app owns the Firebase project and its `GoogleService-Info.plist` /
 ### Step 6B — Use local controls without Remote Config
 
 This is the simplest setup. Do not add Firebase for ads. Leave
-`useRemoteConfig` as `false` (its default), and control the package from the
-boolean and count arguments passed to `AdsBootstrap.init`.
+`remoteConfig` omitted, and control the package from the boolean and count
+arguments passed to `AdsBootstrap.init`.
 
 ```dart
 await AdsBootstrap.init(
   adUnitIds: adUnitIds,
-  useRemoteConfig: false,
   adsEnabled: true,
   bannerEnabled: true,
   interstitialEnabled: true,
@@ -278,8 +315,14 @@ you need to change the values without publishing a new app version.
 The package includes an optional integration with Google's User Messaging
 Platform (UMP). It requests fresh consent information, shows the UMP form when
 required, and blocks ad loading until UMP says that ad requests are allowed.
-This is opt-in so existing apps that omit `consent` keep their current
-behavior.
+When `consent` is omitted, debug builds use
+`const AdsConsentOptions.disabled()` so Google test ads can be exercised
+without a UMP gate, while release builds use `const AdsConsentOptions()` and
+enforce UMP. An explicit `consent` value always overrides this default.
+
+This environment-aware default is a breaking policy change in version 0.2.0.
+Apps that need UMP during debug can pass explicit `debugGeography` and
+`testDeviceIds` values as shown below.
 
 Before release, create and publish the applicable message in AdMob's
 **Privacy & messaging** area. The package displays Google's configured UMP
@@ -350,9 +393,12 @@ decisions, or enable Firebase/Google Consent Mode on the host's behalf.
   13.0.
 - [ ] `PlatformAdIds` contains ad-unit IDs, not app IDs.
 - [ ] Google test IDs are used during development.
-- [ ] Firebase is initialized before `useRemoteConfig: true`.
-- [ ] `consent: AdsConsentOptions()` is enabled for the recommended UMP flow,
-      unless the host app intentionally owns an equivalent consent flow.
+- [ ] Firebase is initialized before `remoteConfig: AdsRemoteConfigOptions()`.
+- [ ] Release consent uses the UMP flow (the omitted default or an explicit
+      `consent: AdsConsentOptions()`), unless the host app intentionally owns
+      an equivalent consent flow.
+- [ ] `USE_NEXT_GEN_SDK=true` is present on every Android Next-Gen build/run.
+- [ ] No unsupported mediation adapter is enabled for a Next-Gen build.
 - [ ] `policy: AdsPolicyOptions(...)` matches the verified audience and content
       rating requirements.
 - [ ] A visible privacy-options entry point is provided when UMP requires it.
@@ -450,6 +496,11 @@ Native ads are opt-in because apps commonly need different placements:
 const SmartNativeAdWidget(size: NativeTemplateSize.small)
 ```
 
+`SmartBannerAdWidget` uses an anchored adaptive banner and is intended for a
+stable top or bottom placement. For a scrolling feed, use the underlying
+`google_mobile_ads` inline adaptive banner APIs instead of placing an anchored
+banner inside the feed.
+
 ## Step 12 — Use SmartDialog for modal UI
 
 Do not call Flutter's `showDialog`, `showModalBottomSheet`, or
@@ -504,10 +555,35 @@ safety timeout.
   IDs before release.
 - Configure the AdMob application ID in the host app's Android/iOS setup.
 - Initialize Firebase before using Remote Config.
+- For Android Next-Gen, pass `--dart-define=USE_NEXT_GEN_SDK=true` to every
+  run, APK, and app-bundle command.
+- Do not enable unsupported mediation adapters in a Next-Gen build.
 - Never show an interstitial immediately on app launch or on every tap.
 - Keep the `isProUser` callback cheap and synchronous; it may be called often.
 - Reset the package only in tests or when intentionally rebuilding its global
   singleton: `AdsService.reset()`.
+
+### Next-Gen smoke verification
+
+For a clean package checkout, generate the example runner and inspect its
+debug dependency graph:
+
+```powershell
+cd example
+flutter create .
+flutter pub get
+flutter build apk --debug --dart-define=USE_NEXT_GEN_SDK=true
+cd android
+.\gradlew.bat app:dependencies --configuration debugRuntimeClasspath | Select-String "ads-mobile-sdk|play-services-ads"
+```
+
+The graph should contain
+`com.google.android.libraries.ads.mobile.sdk:ads-mobile-sdk` and, with no
+mediation configured, should not contain the legacy
+`com.google.android.gms:play-services-ads` artifact selected by the plugin.
+Keep Google test IDs and UMP debug settings limited to development, verify the
+UMP privacy message and privacy-options entry point, and keep the app ID in
+the generated Android manifest and iOS `Info.plist`.
 
 Official setup references:
 

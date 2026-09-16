@@ -1,3 +1,14 @@
+## 0.2.0
+
+* Documented Android GMA Next-Gen builds and mediation constraints.
+* Gated Mobile Ads initialization on the UMP ad-request decision.
+* Updated adaptive banners and app-open lifecycle handling to current plugin
+  APIs.
+* Made omitted consent environment-aware: debug skips UMP for test ads and
+  release enforces UMP; explicit consent values still override the default.
+* Consolidated Remote Config setup under `AdsRemoteConfigOptions`.
+* Replaced the shimmer runtime dependency with a static Flutter placeholder.
+
 ## 0.1.1
 
 * Added a complete local-mode example app for pub.dev users.

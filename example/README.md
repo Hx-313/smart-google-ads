@@ -14,8 +14,18 @@ From this directory, create the native runner files once and run the example:
 ```bash
 flutter create .
 flutter pub get
-flutter run
+flutter run --dart-define=USE_NEXT_GEN_SDK=true
 ```
+
+To verify the Android Next-Gen dependency selection, also run:
+
+```bash
+flutter build apk --debug --dart-define=USE_NEXT_GEN_SDK=true
+```
+
+The example omits `consent`: debug builds therefore skip the UMP gate for
+Google test ads, while release builds enforce UMP. Pass an explicit
+`AdsConsentOptions` value when testing UMP geography or device settings.
 
 Before expecting ads to load, add the AdMob **app ID** to the generated
 Android manifest and iOS `Info.plist` as described in the package root

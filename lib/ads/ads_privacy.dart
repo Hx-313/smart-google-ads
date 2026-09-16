@@ -13,7 +13,7 @@ enum AdsConsentStatus { unknown, required, obtained, notRequired }
 /// production build.
 enum AdsConsentDebugGeography { disabled, eea, regulatedUsState, other }
 
-/// Opt-in configuration for Google's UMP consent flow.
+/// Configuration for Google's UMP consent flow.
 ///
 /// Passing this object to [AdsBootstrap.init] makes the package:
 ///
@@ -21,12 +21,13 @@ enum AdsConsentDebugGeography { disabled, eea, regulatedUsState, other }
 /// 2. show the UMP form when Google says it is required, and
 /// 3. allow ad loading only when UMP reports that ads may be requested.
 ///
-/// Leaving this option `null` preserves the package's existing behavior and
-/// does not call UMP. The host application remains responsible for choosing
-/// the correct legal/privacy configuration and for providing any required
-/// ATT disclosure and permission flow on iOS.
+/// Leaving this option `null` lets [AdsBootstrap] choose an environment-aware
+/// default: debug builds do not call UMP, while release builds enforce UMP.
+/// The host application remains responsible for choosing the correct
+/// legal/privacy configuration and for providing any required ATT disclosure
+/// and permission flow on iOS.
 class AdsConsentOptions {
-  /// Enables the built-in UMP integration when this option is supplied.
+  /// Enables the built-in UMP integration when true.
   final bool enabled;
 
   /// Whether the package should display the UMP form when required.

@@ -1,8 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
+import 'app_open_lifecycle.dart';
 import 'ads_config.dart';
 import 'ads_connectivity.dart';
 import 'ads_key_provider.dart';
@@ -18,8 +19,9 @@ import 'widgets/banner_ad_controller.dart';
 
 typedef ProChecker = bool Function();
 typedef AdsConsentChecker = Future<bool> Function();
+typedef AdsSdkInitializer = Future<void> Function();
 
-class AdsService with WidgetsBindingObserver {
+class AdsService {
   // ══════════════ SINGLETON ══════════════
 
   static AdsService? _instance;
@@ -54,8 +56,9 @@ class AdsService with WidgetsBindingObserver {
   AdsRetryManager _retryManager = AdsRetryManager(_disabledConfig);
   AdsKeyProvider? _keyProvider;
   AdsConsentChecker? _consentChecker;
+  AdsSdkInitializer? _sdkInitializer;
+  bool _sdkInitialized = false;
   bool _consentAllowed = true;
-  bool _lifecycleObserverRegistered = false;
 
   AdsConfig get config => _config;
 
@@ -86,10 +89,15 @@ class AdsService with WidgetsBindingObserver {
 
   // ── Interstitial load guard: prevents parallel in-flight load requests ──
   bool _interstitialLoadInProgress = false;
+  Future<bool>? _interstitialLoadFuture;
+  Future<bool>? _rewardedLoadFuture;
 
-  // ── App Open ──
   // ── App Open suppression ──
-  bool _eligibleForAppOpen = false;
+  AppOpenLifecycleCoordinator? _appOpenLifecycleCoordinator;
+  final AppOpenForegroundGate _appOpenForegroundGate =
+      AppOpenForegroundGate();
+  Timer? _appOpenForegroundTimer;
+  int _foregroundTransitionCount = 0;
   bool _interstitialJustDismissed = false;
 
   // ── Banner controller ──
@@ -114,8 +122,17 @@ class AdsService with WidgetsBindingObserver {
     return _config.adIdFor(AdType.banner);
   }
 
-  bool get isRewardedReady => _rewardedHandler?.isLoaded == true;
-  bool get isRewardedLoading => _rewardedHandler?.state == AdState.loading;
+  AdState get rewardedState {
+    if (_rewardedLoadFuture != null &&
+        _rewardedHandler?.state != AdState.loaded &&
+        _rewardedHandler?.state != AdState.showing) {
+      return AdState.loading;
+    }
+    return _rewardedHandler?.state ?? AdState.idle;
+  }
+
+  bool get isRewardedReady => rewardedState == AdState.loaded;
+  bool get isRewardedLoading => rewardedState == AdState.loading;
 
   // ══════════════════════════════════════════════════════════
   //  INITIALIZATION
@@ -125,6 +142,7 @@ class AdsService with WidgetsBindingObserver {
     required AdsKeyProvider keyProvider,
     ProChecker? isProUser,
     AdsConsentChecker? consentChecker,
+    AdsSdkInitializer? sdkInitializer,
   }) async {
     // ✅ If already initialized, return.
     if (_instance != null && _instance!._initialized) return _instance!;
@@ -136,9 +154,9 @@ class AdsService with WidgetsBindingObserver {
     if (isProUser != null) service._isProUser = isProUser;
     service._keyProvider = keyProvider;
     service._consentChecker = consentChecker;
-
-    // Init MobileAds (safe to call multiple times)
-    await MobileAds.instance.initialize();
+    service._sdkInitializer = sdkInitializer ?? () async {
+      await MobileAds.instance.initialize();
+    };
 
     // Fetch config
     final fetchedConfig = await keyProvider.getConfig();
@@ -151,21 +169,31 @@ class AdsService with WidgetsBindingObserver {
       recheckInterval: service._config.connectivityRecheckInterval,
     );
 
-    // Mark initialized even if ads are disabled — so app won't try re-init loops
-    service._initialized = true;
-
     if (!service._config.adsEnabled || !service._consentAllowed) {
+      // Mark initialized even if ads are disabled — so app won't try re-init
+      // loops and, importantly, do not initialize Mobile Ads in no-ad mode.
+      service._initialized = true;
       dPrint(
         '🚫 AdsService: ads are currently unavailable (initialized in no-ads mode)',
       );
       return service;
     }
 
+    // Init Mobile Ads only after config and consent have allowed ad access.
+    if (!await service._initializeSdkIfNeeded()) {
+      service._retryManager = AdsRetryManager(service._config);
+      service._initialized = true;
+      return service;
+    }
+
+    // Mark initialized only after the SDK has initialized successfully.
+    service._initialized = true;
+
     // Create handlers for available types
     service._createHandlers();
 
-    // Observer only matters if appOpen is enabled
-    service._addLifecycleObserver();
+    // App-state listening only matters if app-open ads are enabled.
+    service._startAppOpenLifecycle();
 
     // Preload
     if (service._config.preloadEnabled && !service._isProUser()) {
@@ -174,6 +202,23 @@ class AdsService with WidgetsBindingObserver {
 
     dPrint('✅ AdsService initialized: ${service._config.availableAdTypes}');
     return service;
+  }
+
+  Future<bool> _initializeSdkIfNeeded() async {
+    if (_sdkInitialized) return true;
+
+    try {
+      await (_sdkInitializer ?? () async {
+        await MobileAds.instance.initialize();
+      })();
+      _sdkInitialized = true;
+      return true;
+    } catch (error, stackTrace) {
+      dPrint('⚠️ AdsService: Mobile Ads initialization failed: $error');
+      dPrint('$stackTrace');
+      _config = _config.copyWith(adsEnabled: false, preloadEnabled: false);
+      return false;
+    }
   }
 
   void _createHandlers() {
@@ -248,13 +293,39 @@ class AdsService with WidgetsBindingObserver {
   /// Starts a background interstitial load only if one isn't already in-flight.
   /// This prevents the parallel-request explosion when ads aren't cached yet.
   void _ensureInterstitialLoading() {
-    if (_interstitialLoadInProgress) return;
-    if (_interstitialHandler?.isLoaded == true) return;
+    unawaited(_ensureInterstitialLoaded());
+  }
+
+  Future<bool> _ensureInterstitialLoaded() async {
+    if (_interstitialHandler?.isLoaded == true) return true;
+    final pending = _interstitialLoadFuture;
+    if (pending != null) return pending;
 
     _interstitialLoadInProgress = true;
-    _loadWithRetry(AdType.interstitial).then((_) {
-      _interstitialLoadInProgress = false;
-    });
+    final future = _loadWithRetry(AdType.interstitial);
+    _interstitialLoadFuture = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_interstitialLoadFuture, future)) {
+        _interstitialLoadFuture = null;
+        _interstitialLoadInProgress = false;
+      }
+    }
+  }
+
+  Future<bool> _ensureRewardedLoading() async {
+    if (_rewardedHandler?.isLoaded == true) return true;
+    final pending = _rewardedLoadFuture;
+    if (pending != null) return pending;
+
+    final future = _loadWithRetry(AdType.rewarded);
+    _rewardedLoadFuture = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_rewardedLoadFuture, future)) _rewardedLoadFuture = null;
+    }
   }
 
   dynamic _handlerFor(AdType type) => switch (type) {
@@ -279,8 +350,10 @@ class AdsService with WidgetsBindingObserver {
       } else if (type == AdType.interstitial) {
         // Use the guarded loader for interstitial to prevent parallel requests
         _ensureInterstitialLoading();
+      } else if (type == AdType.rewarded) {
+        _ensureRewardedLoading();
       } else {
-        _loadWithRetry(type); // rewarded/appOpen use config retry policy
+        _loadWithRetry(type); // appOpen uses config retry policy
       }
     }
   }
@@ -289,24 +362,33 @@ class AdsService with WidgetsBindingObserver {
   //  APP LIFECYCLE (App Open)
   // ══════════════════════════════════════════════════════════
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!_isSafeToOperate) return;
-    if (!_config.isAppOpenAvailable || _isProUser()) return;
-
-    if (state == AppLifecycleState.paused) _eligibleForAppOpen = true;
-
-    if (state == AppLifecycleState.resumed) {
-      Future.delayed(const Duration(milliseconds: 150), () {
-        if (_eligibleForAppOpen &&
-            !_interstitialJustDismissed &&
-            _appOpenHandler?.isShowing != true) {
-          showAppOpen();
-        }
-        _eligibleForAppOpen = false;
-        _interstitialJustDismissed = false;
-      });
+  void _handleAppOpenForeground() {
+    if (!_appOpenForegroundGate.shouldShow(AppState.foreground)) {
+      _interstitialJustDismissed = false;
+      return;
     }
+
+    _foregroundTransitionCount++;
+    _appOpenForegroundTimer?.cancel();
+    _appOpenForegroundTimer = Timer(const Duration(milliseconds: 150), () {
+      _appOpenForegroundTimer = null;
+
+      final canShow =
+          _isSafeToOperate &&
+          _config.isAppOpenAvailable &&
+          !_isProUser() &&
+          !isAppOpenBlocked &&
+          !_interstitialJustDismissed &&
+          _appOpenHandler?.isShowing != true;
+
+      if (canShow) {
+        unawaited(showAppOpen());
+      } else if (_skipNextAppOpen) {
+        _skipNextAppOpen = false;
+        dPrint('⏭️ AppOpen: skipped one opportunity');
+      }
+      _interstitialJustDismissed = false;
+    });
   }
 
   // ══════════════════════════════════════════════════════════
@@ -468,7 +550,43 @@ class AdsService with WidgetsBindingObserver {
 
   Future<void> preloadRewarded() async {
     if (!_isSafeToOperate) return;
-    await _loadWithRetry(AdType.rewarded);
+    await _ensureRewardedLoading();
+  }
+
+  Future<bool> _showInterstitialFallback({VoidCallback? onDismissed}) async {
+    if (!_isSafeToOperate || !hasInterstitial || _isProUser()) return false;
+
+    final handler = _interstitialHandler;
+    if (handler == null) return false;
+    if (!handler.isLoaded && !await _ensureInterstitialLoaded()) return false;
+    if (!handler.isLoaded) return false;
+
+    final originalOnDismissed = handler.onDismissed;
+    final originalOnError = handler.onError;
+    var finished = false;
+
+    void restoreCallbacks() {
+      handler.onDismissed = originalOnDismissed;
+      handler.onError = originalOnError;
+    }
+
+    void finish({bool dismissed = false}) {
+      if (finished) return;
+      finished = true;
+      restoreCallbacks();
+      if (dismissed) originalOnDismissed?.call();
+      onDismissed?.call();
+    }
+
+    handler.onDismissed = () => finish(dismissed: true);
+    handler.onError = (error) {
+      finish();
+      originalOnError?.call(error);
+    };
+
+    final shown = await handler.show();
+    if (!shown) finish();
+    return shown;
   }
 
   Future<bool> showRewarded({
@@ -487,16 +605,17 @@ class AdsService with WidgetsBindingObserver {
     if (!hasRewarded || _rewardedHandler == null) return false;
 
     if (!_rewardedHandler!.isLoaded) {
-      final loaded = await _loadWithRetry(AdType.rewarded);
-      if (!loaded) return false;
+      final loaded = await _ensureRewardedLoading();
+      if (!loaded) {
+        dPrint('⏭️ Rewarded ad unavailable. Trying interstitial fallback.');
+        await _showInterstitialFallback(onDismissed: onDismissed);
+        return false;
+      }
     }
 
     _rewardedHandler!.onDismissed = () {
       onDismissed?.call();
-      Future.delayed(
-        const Duration(milliseconds: 500),
-        () => _loadWithRetry(AdType.rewarded),
-      );
+      Future.delayed(const Duration(milliseconds: 500), _ensureRewardedLoading);
     };
 
     return _rewardedHandler!.show(onUserEarnedReward: onUserEarnedReward);
@@ -560,8 +679,12 @@ class AdsService with WidgetsBindingObserver {
     _retryManager = AdsRetryManager(_config);
     _interstitialLoadInProgress = false;
     if (_config.adsEnabled) {
+      if (!await _initializeSdkIfNeeded()) {
+        _retryManager = AdsRetryManager(_config);
+        return;
+      }
       _createHandlers();
-      _addLifecycleObserver();
+      _startAppOpenLifecycle();
       if (_config.preloadEnabled) _preloadAll();
     }
   }
@@ -586,12 +709,16 @@ class AdsService with WidgetsBindingObserver {
   }
 
   void _disposeHandlers() {
+    _disposeAppOpenLifecycle();
     _interstitialHandler?.dispose();
     _rewardedHandler?.dispose();
     _bannerHandler?.dispose();
     _nativeHandler?.dispose();
     _appOpenHandler?.dispose();
     _directInterstitialHandler?.dispose();
+    _interstitialLoadInProgress = false;
+    _interstitialLoadFuture = null;
+    _rewardedLoadFuture = null;
 
     _interstitialHandler = null;
     _rewardedHandler = null;
@@ -602,15 +729,15 @@ class AdsService with WidgetsBindingObserver {
   }
 
   void dispose() {
-    if (_lifecycleObserverRegistered) {
-      WidgetsBinding.instance.removeObserver(this);
-      _lifecycleObserverRegistered = false;
-    }
+    _disposeAppOpenLifecycle();
     _disposeHandlers();
     clearAppOpenBlockers();
     _screenCount = 0;
+    _foregroundTransitionCount = 0;
     _pendingNavCallback = null;
     _interstitialLoadInProgress = false;
+    _interstitialLoadFuture = null;
+    _rewardedLoadFuture = null;
   }
 
   static void reset() {
@@ -636,6 +763,9 @@ class AdsService with WidgetsBindingObserver {
     'rewarded': {
       'available': hasRewarded,
       'loaded': _rewardedHandler?.isLoaded ?? false,
+      'loading': isRewardedLoading,
+      'state': rewardedState.name,
+      'loadInProgress': _rewardedLoadFuture != null,
     },
     'banner': {
       'available': hasBanner,
@@ -649,6 +779,7 @@ class AdsService with WidgetsBindingObserver {
       'available': hasAppOpen,
       'loaded': _appOpenHandler?.isLoaded ?? false,
     },
+    'foregroundTransitions': _foregroundTransitionCount,
   };
 
   //==============================================
@@ -764,9 +895,24 @@ class AdsService with WidgetsBindingObserver {
     return config.copyWith(adsEnabled: false, preloadEnabled: false);
   }
 
-  void _addLifecycleObserver() {
-    if (_lifecycleObserverRegistered) return;
-    WidgetsBinding.instance.addObserver(this);
-    _lifecycleObserverRegistered = true;
+  void _startAppOpenLifecycle() {
+    if (!_config.isAppOpenAvailable || _appOpenHandler == null) return;
+    if (_appOpenLifecycleCoordinator != null) return;
+
+    final coordinator = AppOpenLifecycleCoordinator(
+      onForeground: _handleAppOpenForeground,
+    );
+    _appOpenLifecycleCoordinator = coordinator;
+    unawaited(coordinator.start());
+  }
+
+  void _disposeAppOpenLifecycle() {
+    _appOpenForegroundTimer?.cancel();
+    _appOpenForegroundTimer = null;
+    _appOpenForegroundGate.reset();
+
+    final coordinator = _appOpenLifecycleCoordinator;
+    _appOpenLifecycleCoordinator = null;
+    if (coordinator != null) unawaited(coordinator.dispose());
   }
 }

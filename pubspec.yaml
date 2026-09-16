@@ -1,6 +1,6 @@
 name: smart_google_ads
 description: "A lifecycle-safe Flutter Google Mobile Ads package with optional UMP consent, age restrictions, Remote Config, and smart ad widgets."
-version: 0.1.1
+version: 0.2.0
 repository: https://github.com/Hx-313/smart-google-ads
 issue_tracker: https://github.com/Hx-313/smart-google-ads/issues
 
@@ -13,7 +13,6 @@ dependencies:
   flutter:
     sdk: flutter
   google_mobile_ads: ^9.1.0
-  shimmer: ^4.0.0
 
 dev_dependencies:
   flutter_test:

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
@@ -70,6 +72,144 @@ void main() {
     expect(options.minimumFetchInterval, const Duration(hours: 6));
   });
 
+  test('omitted consent is disabled in debug and enabled in release', () {
+    expect(
+      AdsBootstrap.resolveConsentOptions(debug: true).enabled,
+      isFalse,
+    );
+    expect(
+      AdsBootstrap.resolveConsentOptions(debug: false).enabled,
+      isTrue,
+    );
+
+    const explicit = AdsConsentOptions.disabled();
+    expect(
+      AdsBootstrap.resolveConsentOptions(
+        consent: explicit,
+        debug: false,
+      ).enabled,
+      isFalse,
+    );
+  });
+
+  test('does not initialize Mobile Ads when consent denies ad access', () async {
+    AdsService.reset();
+    var sdkInitialized = false;
+    const config = AdsConfig(
+      bannerIds: PlatformAdIds(debug: 'banner-id'),
+      bannerEnabled: true,
+      interstitialEnabled: false,
+      nativeEnabled: false,
+      appOpenEnabled: false,
+      rewardedEnabled: false,
+      directInterstitialEnabled: false,
+      preloadEnabled: false,
+    );
+
+    try {
+      final ads = await AdsService.initialize(
+        keyProvider: const DirectAdsKeyProvider(config),
+        consentChecker: () async => false,
+        sdkInitializer: () async => sdkInitialized = true,
+      );
+
+      expect(sdkInitialized, isFalse);
+      expect(AdsService.isInitialized, isTrue);
+      expect(ads.hasBanner, isFalse);
+    } finally {
+      AdsService.reset();
+    }
+  });
+
+  test('initializes Mobile Ads when consent is later granted', () async {
+    AdsService.reset();
+    var consentAllowed = false;
+    var sdkInitializations = 0;
+    const config = AdsConfig(
+      bannerIds: PlatformAdIds(debug: 'banner-id'),
+      bannerEnabled: true,
+      interstitialEnabled: false,
+      nativeEnabled: false,
+      appOpenEnabled: false,
+      rewardedEnabled: false,
+      directInterstitialEnabled: false,
+      preloadEnabled: false,
+    );
+
+    try {
+      final ads = await AdsService.initialize(
+        keyProvider: const DirectAdsKeyProvider(config),
+        consentChecker: () async => consentAllowed,
+        sdkInitializer: () async => sdkInitializations++,
+      );
+
+      expect(sdkInitializations, 0);
+      expect(ads.hasBanner, isFalse);
+
+      consentAllowed = true;
+      await ads.refreshConsent();
+
+      expect(sdkInitializations, 1);
+      expect(ads.hasBanner, isTrue);
+    } finally {
+      AdsService.reset();
+    }
+  });
+
+  test('initializes Mobile Ads before creating ad handlers', () async {
+    AdsService.reset();
+    final events = <String>[];
+    const config = AdsConfig(
+      bannerIds: PlatformAdIds(debug: 'banner-id'),
+      bannerEnabled: true,
+      interstitialEnabled: false,
+      nativeEnabled: false,
+      appOpenEnabled: false,
+      rewardedEnabled: false,
+      directInterstitialEnabled: false,
+      preloadEnabled: false,
+    );
+
+    try {
+      final ads = await AdsService.initialize(
+        keyProvider: const DirectAdsKeyProvider(config),
+        consentChecker: () async => true,
+        sdkInitializer: () async => events.add('sdk-init'),
+      );
+
+      expect(events, ['sdk-init']);
+      expect(ads.hasBanner, isTrue);
+    } finally {
+      AdsService.reset();
+    }
+  });
+
+  test('fails closed when Mobile Ads initialization throws', () async {
+    AdsService.reset();
+    const config = AdsConfig(
+      bannerIds: PlatformAdIds(debug: 'banner-id'),
+      bannerEnabled: true,
+      interstitialEnabled: false,
+      nativeEnabled: false,
+      appOpenEnabled: false,
+      rewardedEnabled: false,
+      directInterstitialEnabled: false,
+      preloadEnabled: false,
+    );
+
+    try {
+      final ads = await AdsService.initialize(
+        keyProvider: const DirectAdsKeyProvider(config),
+        sdkInitializer: () async => throw StateError('sdk failed'),
+      );
+
+      expect(AdsService.isInitialized, isTrue);
+      expect(ads.hasBanner, isFalse);
+    } finally {
+      AdsService.reset();
+    }
+  });
+
   test('UMP consent is requested before ad access is granted', () async {
     final client = _FakeConsentClient();
     final manager = AdsConsentManager(client: client);
@@ -113,6 +253,44 @@ void main() {
     expect(client.formCalls, 0);
   });
 
+  test('app-open coordinator reacts only to foreground and stops after dispose', () async {
+    final states = StreamController<AppState>.broadcast();
+    var foregroundCallbacks = 0;
+    final coordinator = AppOpenLifecycleCoordinator(
+      appStateStream: states.stream,
+      onForeground: () => foregroundCallbacks++,
+    );
+
+    try {
+      await coordinator.start();
+      states
+        ..add(AppState.background)
+        ..add(AppState.foreground);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(foregroundCallbacks, 1);
+
+      await coordinator.dispose();
+      states.add(AppState.foreground);
+      await Future<void>.delayed(Duration.zero);
+      expect(foregroundCallbacks, 1);
+    } finally {
+      await coordinator.dispose();
+      await states.close();
+    }
+  });
+
+  test('app-open foreground gate skips the first opportunity and resets', () {
+    final gate = AppOpenForegroundGate(skippedForegrounds: 1);
+
+    expect(gate.shouldShow(AppState.foreground), isFalse);
+    expect(gate.shouldShow(AppState.foreground), isTrue);
+    expect(gate.shouldShow(AppState.background), isFalse);
+
+    gate.reset();
+    expect(gate.shouldShow(AppState.foreground), isFalse);
+  });
+
   test('policy maps to Google request restrictions', () {
     const policy = AdsPolicyOptions(
       ageTreatment: AdsAgeTreatment.child,
@@ -125,5 +303,19 @@ void main() {
     expect(configuration.ageRestrictedTreatment, AgeRestrictedTreatment.child);
     expect(configuration.maxAdContentRating, MaxAdContentRating.pg);
     expect(configuration.testDeviceIds, ['test-device']);
+  });
+
+  test('rewarded debug state exposes idle and loading status before init', () {
+    AdsService.reset();
+    final ads = AdsService.instance;
+    final rewarded = ads.getDebugState()['rewarded'] as Map<String, dynamic>;
+
+    expect(ads.rewardedState, AdState.idle);
+    expect(ads.isRewardedLoading, isFalse);
+    expect(rewarded['state'], 'idle');
+    expect(rewarded['loading'], isFalse);
+    expect(rewarded['loadInProgress'], isFalse);
+
+    AdsService.reset();
   });
 }
