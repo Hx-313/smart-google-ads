@@ -1,7 +1,8 @@
 ## 0.2.1
 
 * Added a GitHub demo video link to the README.
-* Linked the README demo video from the external `Hx-313/videos` repository.
+* Linked the README demo video from the external `Hx-313/videos` repository
+  with an absolute raw-media URL for pub.dev rendering.
 
 ## 0.2.0
 

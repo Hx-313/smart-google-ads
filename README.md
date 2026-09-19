@@ -10,6 +10,14 @@ consent support.
 
 ## Demo
 
+<video
+  controls
+  width="720"
+  src="https://raw.githubusercontent.com/Hx-313/videos/main/smart-google-ads-demo.mp4"
+>
+  Your browser does not support embedded videos.
+</video>
+
 [▶ Watch the smart_google_ads demo](https://github.com/Hx-313/videos/blob/main/smart-google-ads-demo.mp4)
 
 ## Step 1 — Install the package
