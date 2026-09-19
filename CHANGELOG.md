@@ -1,3 +1,7 @@
+## 0.2.2
+* added embeded video for demo 
+* Prepared the package metadata for the next pub.dev release.
+
 ## 0.2.1
 
 * Added a GitHub demo video link to the README.
