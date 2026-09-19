@@ -1,19 +1,37 @@
 # smart_google_ads
 
-An ad-ready Flutter package built on `google_mobile_ads`. It provides one
-bootstrap entry point for Mobile Ads, optional Firebase Remote Config flags,
-platform-aware ad unit IDs, safe preload/retry behavior, app-open suppression,
-adaptive banners, native templates, rewarded ads, and ad-aware dialogs.
-It also offers Google UMP consent handling and modern age/content request
-restrictions with an environment-aware consent default.
+## Smart Google AdMob Integration for Flutter
+
+`smart_google_ads` helps Flutter apps manage Google Mobile Ads on Android and
+iOS through one consistent API. It supports adaptive banner, interstitial,
+rewarded, native, and app-open ad formats, with centralized initialization, ad
+preloading, lifecycle handling, optional Firebase Remote Config, and UMP
+consent support.
 
 ## Step 1 — Install the package
-
-Install the published package from pub.dev:
 
 ```bash
 flutter pub add smart_google_ads
 ```
+
+### What the package handles
+
+| `smart_google_ads` handles | The host app still configures |
+| --- | --- |
+| Initializes the Mobile Ads SDK and manages ad loading, preloading, and lifecycle. | AdMob app IDs in Android's manifest and iOS's `Info.plist`, plus Google Mobile Ads platform build settings. |
+| Provides widgets and APIs for banner, interstitial, rewarded, native, and app-open ads. | Production ad-unit IDs supplied through the package configuration. |
+| Optionally integrates UMP consent and Firebase Remote Config. | Firebase project files and initialization for Remote Config, plus app-owned mediation and privacy settings. |
+
+### Defaults at a glance
+
+| Behavior | Default |
+| --- | --- |
+| Ad formats | Types with an ID for this platform are enabled; native is opt-in. |
+| Native ads | Disabled until you set `nativeEnabled: true`. |
+| Preloading | Enabled for configured and enabled ad formats. |
+| Counted interstitials | Threshold defaults to three visits; an ad shows only when ready. |
+| Firebase Remote Config | Off when `remoteConfig` is omitted; local bootstrap options are used. |
+| UMP consent | Omitted consent is disabled in debug and enabled in release. Explicit options override this. |
 
 If you enable Firebase Remote Config, also add Firebase Core:
 
@@ -21,10 +39,7 @@ If you enable Firebase Remote Config, also add Firebase Core:
 flutter pub add firebase_core
 ```
 
-The host app must still complete the normal platform setup for
-`google_mobile_ads`, including the AdMob application ID in Android and iOS
-configuration. If Remote Config is enabled, the host app must also initialize
-Firebase before calling the bootstrap:
+If Remote Config is enabled, initialize Firebase before calling the bootstrap:
 
 ```dart
 await Firebase.initializeApp();
@@ -592,3 +607,29 @@ Official setup references:
 - [Google ad-serving privacy modes](https://developers.google.com/admob/flutter/privacy/ad-serving-modes)
 - [Google Mobile Ads targeting and age treatment](https://developers.google.com/admob/flutter/targeting)
 - [Firebase setup for Flutter](https://firebase.google.com/docs/flutter/setup)
+
+## Troubleshooting
+
+- **No ad appears:** confirm the AdMob app ID is in the Android/iOS host
+  configuration, the matching ad-unit ID is in `PlatformAdIds`, and
+  `AdsBootstrap.init` runs before ad widgets are built. Use Google's test IDs
+  during development. Consent, connectivity, and ad inventory also affect
+  availability; an ad is not guaranteed to fill.
+- **A native ad stays hidden:** native ads are opt-in. Set
+  `nativeEnabled: true` and include a native ad-unit ID for the current platform.
+- **Ads are blocked in a release build:** when consent options are omitted,
+  release builds use UMP. Publish the applicable privacy message in AdMob and
+  check that UMP allows ad requests.
+- **Remote Config values are not applied:** pass `AdsRemoteConfigOptions` and
+  initialize Firebase before `AdsBootstrap.init`. Missing or unavailable values
+  fall back to the local configuration.
+
+## Package resources
+
+- [API reference](https://pub.dev/documentation/smart_google_ads/latest/)
+- [Changelog](CHANGELOG.md)
+- [Report an issue](https://github.com/Hx-313/smart-google-ads/issues)
+
+## License
+
+This package is available under the MIT license. See [LICENSE](LICENSE).
