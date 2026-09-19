@@ -8,6 +8,10 @@ rewarded, native, and app-open ad formats, with centralized initialization, ad
 preloading, lifecycle handling, optional Firebase Remote Config, and UMP
 consent support.
 
+## Demo
+
+[▶ Watch the smart_google_ads demo](https://github.com/Hx-313/smart-google-ads/blob/main/assets/smart-google-ads-demo.mp4)
+
 ## Step 1 — Install the package
 
 ```bash
