@@ -1,7 +1,7 @@
 ## 0.2.1
 
 * Added a GitHub demo video link to the README.
-* Included the `smart-google-ads-demo.mp4` package demo asset.
+* Linked the README demo video from the external `Hx-313/videos` repository.
 
 ## 0.2.0
 

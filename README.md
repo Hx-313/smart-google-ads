@@ -10,7 +10,7 @@ consent support.
 
 ## Demo
 
-[▶ Watch the smart_google_ads demo](https://github.com/Hx-313/smart-google-ads/blob/main/assets/smart-google-ads-demo.mp4)
+[▶ Watch the smart_google_ads demo](https://github.com/Hx-313/videos/blob/main/smart-google-ads-demo.mp4)
 
 ## Step 1 — Install the package
 
