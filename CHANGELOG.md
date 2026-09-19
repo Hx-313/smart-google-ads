@@ -1,3 +1,8 @@
+## 0.2.1
+
+* Added a GitHub demo video link to the README.
+* Included the `smart-google-ads-demo.mp4` package demo asset.
+
 ## 0.2.0
 
 * Documented Android GMA Next-Gen builds and mediation constraints.
