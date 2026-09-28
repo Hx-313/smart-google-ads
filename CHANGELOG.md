@@ -1,5 +1,14 @@
+## 0.2.3
+
+* Sized the banner loading shimmer to the resolved anchored adaptive banner
+  dimensions and constrained custom loading widgets to the same bounds.
+* Clear the loading state and collapse failed or unfilled banners, including
+  adaptive-size errors, exceptions, and requests that time out.
+* Replaced the `shimmer` package with a theme-aware animated banner skeleton.
+
 ## 0.2.2
-* added embeded video for demo 
+
+* Added an embedded demo video.
 * Prepared the package metadata for the next pub.dev release.
 
 ## 0.2.1

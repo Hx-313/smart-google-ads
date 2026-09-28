@@ -142,6 +142,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.14.4"
+  flutter_lints:
+    dependency: "direct dev"
+    description:
+      name: flutter_lints
+      sha256: "3105dc8492f6183fb076ccf1f351ac3d60564bff92e20bfc4af9cc1651f4e7e1"
+      url: "https://pub.dev"
+    source: hosted
+    version: "6.0.0"
   flutter_localizations:
     dependency: transitive
     description: flutter
@@ -184,6 +192,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.12.0"
+  lints:
+    dependency: transitive
+    description:
+      name: lints
+      sha256: "12f842a479589fea194fe5c5a3095abc7be0c1f2ddfa9a0e76aed1dbd26a87df"
+      url: "https://pub.dev"
+    source: hosted
+    version: "6.1.0"
   material_color_utilities:
     dependency: transitive
     description:
@@ -249,10 +265,10 @@ packages:
     dependency: "direct main"
     description:
       name: smart_google_ads
-      sha256: "2f1f5fb3a02ac6c646b8550cd2dd1bae373acea39d0d6d6f2129695d010f640a"
+      sha256: c46a7cbf4e6400ae3eb53c04470bfe7f5067c78c319a9d7802b9fb02e17e2772
       url: "https://pub.dev"
     source: hosted
-    version: "0.2.0"
+    version: "0.2.2"
   source_span:
     dependency: transitive
     description:
