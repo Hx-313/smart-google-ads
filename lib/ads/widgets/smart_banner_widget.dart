@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
@@ -28,10 +30,15 @@ class SmartBannerAdWidget extends StatefulWidget {
 }
 
 class _SmartBannerAdWidgetState extends State<SmartBannerAdWidget> {
+  static const _loadTimeout = Duration(seconds: 30);
+
   BannerAd? _bannerAd;
   AdSize? _size;
   bool _loaded = false;
+  bool _isLoading = false;
   bool _isFailed = false;
+  int _loadAttempt = 0;
+  Timer? _loadTimer;
 
   @override
   void didChangeDependencies() {
@@ -40,7 +47,7 @@ class _SmartBannerAdWidgetState extends State<SmartBannerAdWidget> {
   }
 
   Future<void> _loadIfNeeded() async {
-    if (_bannerAd != null) return;
+    if (_isLoading || _loaded || _bannerAd != null || _isFailed) return;
 
     // ✅ FIX: Check if AdsService is ready BEFORE calling .instance
     if (!AdsService.isInitialized) {
@@ -58,65 +65,115 @@ class _SmartBannerAdWidgetState extends State<SmartBannerAdWidget> {
       return;
     }
 
-    final adUnitId = ads.bannerAdUnitId;
-    if (adUnitId == null || adUnitId.isEmpty) {
-      dPrint('❌ Banner skip: Ad Unit ID is empty');
-      return;
-    }
+    final attempt = ++_loadAttempt;
+    _isLoading = true;
+    _loadTimer = Timer(_loadTimeout, () {
+      dPrint('❌ Banner load timed out');
+      _failLoad(attempt);
+    });
 
-    final width = MediaQuery.of(context).size.width.truncate();
-    final size = await AdSize.getLargeAnchoredAdaptiveBannerAdSize(
-      width,
-    );
+    try {
+      final adUnitId = ads.bannerAdUnitId;
+      if (adUnitId == null || adUnitId.isEmpty) {
+        dPrint('❌ Banner load failed: Ad Unit ID is empty');
+        _failLoad(attempt);
+        return;
+      }
 
-    if (!mounted || size == null) {
-      dPrint('❌ Banner skip: Adaptive size could not be calculated');
-      return;
-    }
+      final width = MediaQuery.of(context).size.width.truncate();
+      final size = await AdSize.getLargeAnchoredAdaptiveBannerAdSize(width);
 
-    _size = size;
-    dPrint('📱 Banner loading: width=$width, id=$adUnitId');
+      if (!mounted || !_isCurrentAttempt(attempt)) return;
+      if (size == null) {
+        dPrint('❌ Banner load failed: Adaptive size could not be calculated');
+        _failLoad(attempt);
+        return;
+      }
 
-    final ad = BannerAd(
-      adUnitId: adUnitId,
-      size: size,
-      request: widget.collapsible
-          ? const AdRequest(extras: {'collapsible': 'bottom'})
-          : const AdRequest(),
-      listener: BannerAdListener(
-        onAdLoaded: (ad) async {
-          dPrint('✅ Banner loaded successfully');
-          if (!mounted) return;
-          final platformSize = await (ad as BannerAd).getPlatformAdSize();
-          if (!mounted) return;
-          setState(() {
-            if (platformSize != null) {
-              _size = platformSize;
+      // Resolve the adaptive height before showing the shimmer. The shimmer
+      // must never guess a fallback height while this platform call is pending.
+      setState(() => _size = size);
+      dPrint('📱 Banner loading: width=$width, id=$adUnitId');
+
+      final ad = BannerAd(
+        adUnitId: adUnitId,
+        size: size,
+        request: widget.collapsible
+            ? const AdRequest(extras: {'collapsible': 'bottom'})
+            : const AdRequest(),
+        listener: BannerAdListener(
+          onAdLoaded: (ad) async {
+            if (!_isCurrentAttempt(attempt) || !identical(_bannerAd, ad)) {
+              return;
             }
-            _loaded = true;
-            _isFailed = false;
-          });
-        },
-        onAdFailedToLoad: (ad, error) {
-          dPrint('❌ Banner load failed: [${error.code}] ${error.message}');
-          ad.dispose();
-          if (!mounted) return;
-          setState(() {
-            _bannerAd = null;
-            _loaded = false;
-            _isFailed = true;
-            _size = null;
-          });
-        },
-      ),
-    );
 
-    setState(() => _bannerAd = ad);
-    ad.load();
+            try {
+              dPrint('✅ Banner loaded successfully');
+              final platformSize = await (ad as BannerAd).getPlatformAdSize();
+              if (!_isCurrentAttempt(attempt) ||
+                  !identical(_bannerAd, ad)) {
+                return;
+              }
+
+              _loadTimer?.cancel();
+              _loadTimer = null;
+              setState(() {
+                if (platformSize != null) _size = platformSize;
+                _loaded = true;
+                _isLoading = false;
+                _isFailed = false;
+              });
+            } catch (error, stackTrace) {
+              dPrint('❌ Banner load callback failed: $error');
+              dPrint('$stackTrace');
+              _failLoad(attempt);
+            }
+          },
+          onAdFailedToLoad: (ad, error) {
+            dPrint('❌ Banner load failed: [${error.code}] ${error.message}');
+            _failLoad(attempt);
+          },
+        ),
+      );
+
+      if (!mounted || !_isCurrentAttempt(attempt)) {
+        ad.dispose();
+        return;
+      }
+
+      setState(() => _bannerAd = ad);
+      ad.load();
+    } catch (error, stackTrace) {
+      dPrint('❌ Banner load exception: $error');
+      dPrint('$stackTrace');
+      _failLoad(attempt);
+    }
+  }
+
+  bool _isCurrentAttempt(int attempt) =>
+      mounted && _isLoading && attempt == _loadAttempt;
+
+  void _failLoad(int attempt) {
+    if (!_isCurrentAttempt(attempt)) return;
+
+    _loadTimer?.cancel();
+    _loadTimer = null;
+    final ad = _bannerAd;
+    setState(() {
+      _bannerAd = null;
+      _size = null;
+      _loaded = false;
+      _isLoading = false;
+      _isFailed = true;
+    });
+    ad?.dispose();
   }
 
   @override
   void dispose() {
+    _loadTimer?.cancel();
+    _loadTimer = null;
+    _loadAttempt++;
     _bannerAd?.dispose();
     _bannerAd = null;
     super.dispose();
@@ -124,6 +181,8 @@ class _SmartBannerAdWidgetState extends State<SmartBannerAdWidget> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isFailed) return const SizedBox.shrink();
+
     // ✅ FIX: Check if initialized here too!
     if (!AdsService.isInitialized) {
       return widget.placeholder ?? const SizedBox.shrink();
@@ -143,22 +202,30 @@ class _SmartBannerAdWidgetState extends State<SmartBannerAdWidget> {
           return widget.placeholder ?? const SizedBox.shrink();
         }
 
-        if (_isFailed) {
-          return widget.placeholder ?? const SizedBox.shrink();
+        if (_isLoading) {
+          final size = _size;
+          if (size == null) return const SizedBox.shrink();
+
+          final defaultLoader = BannerAdShimmer(
+            width: size.width.toDouble(),
+            height: size.height.toDouble(),
+          );
+          final loaderChild = widget.loadingWidget ?? defaultLoader;
+          final sizedLoader = SizedBox(
+            width: size.width.toDouble(),
+            height: size.height.toDouble(),
+            child: ClipRect(child: loaderChild),
+          );
+
+          if (widget.padding == EdgeInsets.zero) {
+            return sizedLoader;
+          }
+
+          return Padding(padding: widget.padding, child: sizedLoader);
         }
 
         if (!_loaded || _bannerAd == null || _size == null) {
-          final defaultLoader = BannerAdShimmer(
-            width: _size?.width.toDouble(),
-            height: _size?.height.toDouble(),
-          );
-          final loaderChild = widget.loadingWidget ?? defaultLoader;
-
-          if (widget.padding == EdgeInsets.zero) {
-            return loaderChild;
-          }
-
-          return Padding(padding: widget.padding, child: loaderChild);
+          return const SizedBox.shrink();
         }
 
         final adChild = SizedBox(

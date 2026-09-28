@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
-import 'package:shimmer/shimmer.dart';
 
 import 'package:smart_google_ads/smart_google_ads.dart';
 
@@ -328,7 +327,8 @@ void main() {
         const MaterialApp(home: BannerAdShimmer()),
       );
 
-      expect(find.byType(Shimmer), findsOneWidget);
+      expect(find.byType(BannerAdShimmer), findsOneWidget);
+      expect(find.byType(ShaderMask), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox.shrink());
     },
