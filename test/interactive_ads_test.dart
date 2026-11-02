@@ -333,4 +333,32 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets(
+    'SmartBannerAdWidget has center alignment and isLarge false by default',
+    (tester) async {
+      const widget = SmartBannerAdWidget();
+      expect(widget.alignment, Alignment.center);
+      expect(widget.isLarge, isFalse);
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: SmartBannerAdWidget(
+              placeholder: Text('test-placeholder'),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('test-placeholder'), findsOneWidget);
+    },
+  );
+
+  test('BannerHandler builds centered widget by default', () {
+    final handler = BannerHandler(adUnitId: 'test-ad-unit');
+    expect(handler.widget, isA<SizedBox>()); // SizedBox.shrink when not loaded
+    final customWidget = handler.buildWidget(alignment: Alignment.bottomCenter);
+    expect(customWidget, isA<SizedBox>());
+  });
 }

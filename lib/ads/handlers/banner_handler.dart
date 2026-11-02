@@ -21,12 +21,18 @@ class BannerHandler extends BaseAdHandler {
   Future<bool> loadAdaptive({
     required double screenWidth,
     bool collapsible = false,
+    bool isLarge = false,
   }) async {
     if (state == AdState.loading) return false;
 
-    final size = await AdSize.getLargeAnchoredAdaptiveBannerAdSize(
-      screenWidth.truncate(),
-    );
+    final width = screenWidth.truncate();
+    final size = isLarge
+        ? (await AdSize.getLargeAnchoredAdaptiveBannerAdSize(width) ??
+            // ignore: deprecated_member_use
+            await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(width))
+        // ignore: deprecated_member_use
+        : (await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(width) ??
+            await AdSize.getLargeAnchoredAdaptiveBannerAdSize(width));
     if (size == null) return false;
 
     _adSize = size;
@@ -71,12 +77,17 @@ class BannerHandler extends BaseAdHandler {
   @override
   Future<bool> show() async => isLoaded && _ad != null;
 
-  Widget get widget {
+  Widget get widget => buildWidget();
+
+  Widget buildWidget({Alignment alignment = Alignment.center}) {
     if (_ad == null || _adSize == null) return const SizedBox.shrink();
-    return SizedBox(
-      width: _adSize!.width.toDouble(),
-      height: _adSize!.height.toDouble(),
-      child: AdWidget(ad: _ad!),
+    return Align(
+      alignment: alignment,
+      child: SizedBox(
+        width: _adSize!.width.toDouble(),
+        height: _adSize!.height.toDouble(),
+        child: AdWidget(ad: _ad!),
+      ),
     );
   }
 

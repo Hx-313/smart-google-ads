@@ -15,6 +15,8 @@ class SmartBannerAdWidget extends StatefulWidget {
   final bool showAd;
   final Widget? loadingWidget;
   final Widget? placeholder;
+  final bool isLarge;
+  final Alignment alignment;
 
   const SmartBannerAdWidget({
     super.key,
@@ -23,6 +25,8 @@ class SmartBannerAdWidget extends StatefulWidget {
     this.showAd = true,
     this.loadingWidget,
     this.placeholder,
+    this.isLarge = false,
+    this.alignment = Alignment.center,
   });
 
   @override
@@ -81,7 +85,13 @@ class _SmartBannerAdWidgetState extends State<SmartBannerAdWidget> {
       }
 
       final width = MediaQuery.of(context).size.width.truncate();
-      final size = await AdSize.getLargeAnchoredAdaptiveBannerAdSize(width);
+      final size = widget.isLarge
+          ? (await AdSize.getLargeAnchoredAdaptiveBannerAdSize(width) ??
+              // ignore: deprecated_member_use
+              await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(width))
+          // ignore: deprecated_member_use
+          : (await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(width) ??
+              await AdSize.getLargeAnchoredAdaptiveBannerAdSize(width));
 
       if (!mounted || !_isCurrentAttempt(attempt)) return;
       if (size == null) {
@@ -211,10 +221,13 @@ class _SmartBannerAdWidgetState extends State<SmartBannerAdWidget> {
             height: size.height.toDouble(),
           );
           final loaderChild = widget.loadingWidget ?? defaultLoader;
-          final sizedLoader = SizedBox(
-            width: size.width.toDouble(),
-            height: size.height.toDouble(),
-            child: ClipRect(child: loaderChild),
+          final sizedLoader = Align(
+            alignment: widget.alignment,
+            child: SizedBox(
+              width: size.width.toDouble(),
+              height: size.height.toDouble(),
+              child: ClipRect(child: loaderChild),
+            ),
           );
 
           if (widget.padding == EdgeInsets.zero) {
@@ -228,10 +241,13 @@ class _SmartBannerAdWidgetState extends State<SmartBannerAdWidget> {
           return const SizedBox.shrink();
         }
 
-        final adChild = SizedBox(
-          width: _size!.width.toDouble(),
-          height: _size!.height.toDouble(),
-          child: AdWidget(ad: _bannerAd!),
+        final adChild = Align(
+          alignment: widget.alignment,
+          child: SizedBox(
+            width: _size!.width.toDouble(),
+            height: _size!.height.toDouble(),
+            child: AdWidget(ad: _bannerAd!),
+          ),
         );
 
         if (widget.padding == EdgeInsets.zero) {

@@ -9,6 +9,7 @@ export 'ads/ads_types.dart';
 export 'ads/d_print.dart';
 export 'ads/handlers/ad_clicked_provider.dart';
 export 'ads/handlers/app_open_handler.dart';
+export 'ads/handlers/banner_handler.dart';
 export 'ads/handlers/native_handler.dart';
 export 'ads/widgets/banner_ad_controller.dart';
 export 'ads/widgets/banner_ad_shimmer.dart';
