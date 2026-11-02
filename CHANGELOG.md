@@ -1,3 +1,6 @@
+## 0.2.4
+* Google-ads version bumped to 9.2.0 
+
 ## 0.2.3
 
 * Sized the banner loading shimmer to the resolved anchored adaptive banner
